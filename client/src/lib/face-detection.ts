@@ -73,19 +73,29 @@ export class FaceDetectionService {
   // MediaPipe face detection
   async detectFacesWithMediaPipe(image: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement): Promise<DetectedFace[]> {
     if (!this.mediapipeFace) throw new Error('MediaPipe not initialized');
+    // MediaPipe FaceDetection returns relative coordinates (0..1). Normalize to pixels.
     return new Promise((resolve) => {
       this.mediapipeFace!.onResults((results: any) => {
-        if (!results.detections) return resolve([]);
-        const faces = results.detections.map((det: any) => {
-          const box = det.boundingBox;
+        if (!results.detections || results.detections.length === 0) return resolve([]);
+
+        const width = (image as HTMLVideoElement).videoWidth || (image as HTMLCanvasElement).width || (image as HTMLImageElement).naturalWidth || 0;
+        const height = (image as HTMLVideoElement).videoHeight || (image as HTMLCanvasElement).height || (image as HTMLImageElement).naturalHeight || 0;
+
+        const faces: DetectedFace[] = results.detections.map((det: any) => {
+          const box = det.boundingBox; // {xCenter, yCenter, width, height} in RELATIVE units
+          const pxWidth = box.width * width;
+          const pxHeight = box.height * height;
+          const pxX = (box.xCenter * width) - (pxWidth / 2);
+          const pxY = (box.yCenter * height) - (pxHeight / 2);
           return {
-            x: box.xCenter - box.width / 2,
-            y: box.yCenter - box.height / 2,
-            width: box.width,
-            height: box.height,
-            confidence: det.score[0],
+            x: Math.max(0, pxX),
+            y: Math.max(0, pxY),
+            width: Math.max(0, pxWidth),
+            height: Math.max(0, pxHeight),
+            confidence: det.score?.[0] ?? 0.0,
           } as DetectedFace;
         });
+
         resolve(faces);
       });
       this.mediapipeFace!.send({ image });
@@ -140,6 +150,14 @@ export class FaceDetectionService {
     this.detectionInterval = window.setInterval(async () => {
       try {
         const faces = await this.detectFaces(videoElement);
+        // Keep a lightweight snapshot of last faces to map behaviors to students
+        this.lastDetectedFaces = faces.map(f => ({
+          x: f.x + f.width / 2,
+          y: f.y + f.height / 2,
+          studentId: f.studentId || "",
+          studentName: f.studentName || "Unknown",
+        }));
+
         const behaviors = this.detectBehaviors(videoElement);
         
         console.log('Faces detected:', faces);
@@ -161,7 +179,17 @@ export class FaceDetectionService {
   private async detectFaces(videoElement: HTMLVideoElement): Promise<DetectedFace[]> {
     if (!this.canvas || !this.ctx) return [];
     try {
-      return await this.detectFacesWithMediaPipe(videoElement);
+      const faces = await this.detectFacesWithMediaPipe(videoElement);
+      // Attempt a naive assignment of student identities in order
+      const studentIds = Array.from(this.recognizedStudents.keys());
+      return faces.map((f, idx) => {
+        const matchId = studentIds[idx];
+        if (matchId) {
+          const profile = this.recognizedStudents.get(matchId)!;
+          return { ...f, studentId: matchId, studentName: profile.name };
+        }
+        return f;
+      });
     } catch (error) {
       console.error('Face detection error:', error);
       return [];

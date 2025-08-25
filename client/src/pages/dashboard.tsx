@@ -12,6 +12,22 @@ export default function Dashboard() {
   const [isRecording, setIsRecording] = useState(false);
   const { toast } = useToast();
 
+  // Quick actions listeners
+  useEffect(() => {
+    const onExport = () => {
+      toast({ title: "Export", description: "Attendance export started" });
+    };
+    const onOpenAdd = () => {
+      window.location.href = "/students#add";
+    };
+    window.addEventListener("export-attendance", onExport as EventListener);
+    window.addEventListener("open-add-student", onOpenAdd as EventListener);
+    return () => {
+      window.removeEventListener("export-attendance", onExport as EventListener);
+      window.removeEventListener("open-add-student", onOpenAdd as EventListener);
+    };
+  }, [toast]);
+
   // Fetch current class
   const { data: currentClass } = useQuery<Class>({
     queryKey: ['/api/classes/current']

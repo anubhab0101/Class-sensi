@@ -27,10 +27,16 @@ export function ClassControls({
 
   // Fetch active warnings
   const { data: warnings = [] } = useQuery<BehaviorWarning[]>({
-    queryKey: ['/api/warnings'],
-    queryParams: { 
-      classId: currentClass?.id,
-      isActive: 'true' 
+    queryKey: ['/api/warnings', { classId: currentClass?.id, isActive: 'true' }],
+    queryFn: async () => {
+      if (!currentClass?.id) return [];
+      const params = new URLSearchParams({
+        classId: currentClass.id,
+        isActive: 'true'
+      });
+      const response = await fetch(`/api/warnings?${params.toString()}`);
+      if (!response.ok) throw new Error('Failed to fetch warnings');
+      return response.json();
     },
     enabled: !!currentClass?.id
   });
@@ -130,8 +136,15 @@ export function ClassControls({
                 <Input
                   id="threshold"
                   type="number"
+                  min={0}
+                  max={100}
                   value={threshold}
-                  onChange={(e) => handleSettingChange('attendanceThreshold', parseInt(e.target.value) || 0)}
+                  onChange={(e) => {
+                    let value = parseInt(e.target.value) || 0;
+                    if (value < 0) value = 0;
+                    if (value > 100) value = 100;
+                    handleSettingChange('attendanceThreshold', value);
+                  }}
                   className="w-20"
                   data-testid="input-threshold"
                 />
@@ -181,6 +194,11 @@ export function ClassControls({
               variant="secondary"
               className="w-full"
               data-testid="button-export-attendance"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('export-attendance'));
+                }
+              }}
             >
               <Download className="mr-2 h-4 w-4" />
               Export Attendance
@@ -189,6 +207,11 @@ export function ClassControls({
               variant="secondary"
               className="w-full"
               data-testid="button-add-student"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('open-add-student'));
+                }
+              }}
             >
               <UserPlus className="mr-2 h-4 w-4" />
               Add Student

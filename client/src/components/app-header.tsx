@@ -1,7 +1,18 @@
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Bell } from "lucide-react";
 
 export function AppHeader() {
+  // Fetch teacher profile (use first teacher for now)
+  const { data: teachers = [], isLoading } = useQuery({
+    queryKey: ['/api/teachers'],
+    queryFn: async () => {
+      const response = await fetch('/api/teachers');
+      if (!response.ok) throw new Error('Failed to fetch teachers');
+      return response.json();
+    }
+  });
+  const teacher = teachers[0];
   const [location] = useLocation();
 
   const navigation = [
@@ -11,6 +22,20 @@ export function AppHeader() {
     { name: "Teacher Profile", href: "/teacher-profile" },
   ];
 
+  if (isLoading) {
+    return (
+      <header className="bg-white shadow-sm border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex-shrink-0">
+              <h1 className="text-xl font-bold text-primary">ClassWatch</h1>
+            </div>
+            <div className="text-slate-400">Loading...</div>
+          </div>
+        </div>
+      </header>
+    );
+  }
   return (
     <header className="bg-white shadow-sm border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -46,11 +71,30 @@ export function AppHeader() {
             <div className="flex items-center space-x-2">
               <img 
                 className="h-8 w-8 rounded-full" 
-                src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=32&h=32" 
+                src={teacher?.photoUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(teacher?.name || "Teacher") + "&background=random"}
                 alt="Teacher profile"
                 data-testid="img-profile"
               />
-              <span className="text-sm font-medium" data-testid="text-teacher-name">Dr. Smith</span>
+              <span className="text-sm font-medium" data-testid="text-teacher-name">{teacher?.name || "Teacher"}</span>
+            </div>
+            {/* Teacher profile dropdown/section */}
+            <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg z-50 p-4" style={{minWidth: 240}}>
+              <div className="flex items-center space-x-4 mb-2">
+                <img
+                  src={teacher?.photoUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(teacher?.name || "Teacher") + "&background=random"}
+                  alt="Teacher profile"
+                  className="w-12 h-12 rounded-full object-cover border-2 border-slate-200"
+                  data-testid="img-teacher-current-photo"
+                />
+                <div>
+                  <h3 className="text-lg font-semibold" data-testid="text-teacher-name">{teacher?.name || "Teacher"}</h3>
+                  <p className="text-slate-600 text-sm" data-testid="text-teacher-email">{teacher?.email || ""}</p>
+                </div>
+              </div>
+              <div className="text-xs text-slate-500">Profile created: {teacher?.createdAt ? new Date(teacher.createdAt).toLocaleDateString() : "-"}</div>
+              <div className="mt-3">
+                <a href="/teacher-profile" className="text-primary hover:underline text-sm">Edit Profile</a>
+              </div>
             </div>
           </div>
         </div>

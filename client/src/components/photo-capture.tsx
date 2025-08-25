@@ -100,9 +100,10 @@ export function PhotoCapture({ onPhotoCapture, onCancel, isOpen }: PhotoCaptureP
 
   if (!isOpen) return null;
 
+  // Use a very high z-index to ensure this popup is always on top
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-2xl mx-4">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999]" style={{zIndex: 9999}}>
+      <Card className="w-full max-w-2xl mx-4 relative">
         <CardContent className="p-6">
           <div className="space-y-4">
             <div className="flex justify-between items-center">

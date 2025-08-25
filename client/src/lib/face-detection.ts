@@ -1,4 +1,7 @@
-import * as faceapi from 'face-api.js';
+
+import { FaceDetection } from '@mediapipe/face_detection';
+// OpenCV.js is loaded via script tag or dynamic import (see below)
+let cv: any = null;
 
 export interface DetectedFace {
   x: number;
@@ -24,52 +27,77 @@ export class FaceDetectionService {
   private recognizedStudents: Map<string, { name: string; photoData: string; descriptor?: Float32Array }> = new Map();
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
-  private modelsLoaded = false;
+  // private modelsLoaded = false;
+
+  private mediapipeFace: FaceDetection | null = null;
+  private opencvReady: boolean = false;
 
   async initialize(): Promise<boolean> {
     try {
-      // Create canvas for image processing
       this.canvas = document.createElement('canvas');
       this.ctx = this.canvas.getContext('2d');
       
-      // Load face-api.js models
-      await this.loadFaceApiModels();
-      
-      this.isInitialized = true;
-      await this.loadStudentProfiles();
-      return true;
+      this.mediapipeFace = new FaceDetection({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
+      });
+      this.mediapipeFace.setOptions({
+        model: 'short',
+        minDetectionConfidence: 0.5
+      });
+
+      // Load OpenCV.js
+      if (!cv) {
+        await new Promise<void>((resolve) => {
+          const script = document.createElement('script');
+          script.src = 'https://docs.opencv.org/4.x/opencv.js';
+          script.async = true;
+          script.onload = () => {
+            cv = (window as any).cv;
+            this.opencvReady = true;
+            resolve();
+          };
+          document.body.appendChild(script);
+        });
+      } else {
+        this.opencvReady = true;
+      }
+
+  this.isInitialized = true;
+  return true;
     } catch (error) {
       console.error('Face detection initialization failed:', error);
       return false;
     }
   }
 
-  private async loadFaceApiModels(): Promise<void> {
-    try {
-      console.log('Loading face recognition models...');
-      
-      // Load models from CDN
-      const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@latest/model';
-      
-      await Promise.all([
-        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-        faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
-      ]);
-      
-      this.modelsLoaded = true;
-      console.log('Face recognition models loaded successfully');
-    } catch (error) {
-      console.error('Failed to load face recognition models:', error);
-      // Fall back to basic detection
-      this.modelsLoaded = false;
-    }
+  // MediaPipe face detection
+  async detectFacesWithMediaPipe(image: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement): Promise<DetectedFace[]> {
+    if (!this.mediapipeFace) throw new Error('MediaPipe not initialized');
+    return new Promise((resolve) => {
+      this.mediapipeFace!.onResults((results: any) => {
+        if (!results.detections) return resolve([]);
+        const faces = results.detections.map((det: any) => {
+          const box = det.boundingBox;
+          return {
+            x: box.xCenter - box.width / 2,
+            y: box.yCenter - box.height / 2,
+            width: box.width,
+            height: box.height,
+            confidence: det.score[0],
+          } as DetectedFace;
+        });
+        resolve(faces);
+      });
+      this.mediapipeFace!.send({ image });
+    });
+  }
+  async detectFacesWithOpenCV(image: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement): Promise<DetectedFace[]> {
+    if (!this.opencvReady || !cv) throw new Error('OpenCV.js not loaded');
+    return [];
   }
 
   async loadStudentProfiles(): Promise<void> {
     try {
-      // Fetch student data for face recognition
       const response = await fetch('/api/students');
       if (response.ok) {
         const students = await response.json();
@@ -83,18 +111,6 @@ export class FaceDetectionService {
               descriptor: undefined as Float32Array | undefined
             };
 
-            // Generate face descriptor if models are loaded
-            if (this.modelsLoaded) {
-              try {
-                const descriptor = await this.generateFaceDescriptor(student.photoUrl);
-                if (descriptor) {
-                  profileData.descriptor = descriptor;
-                }
-              } catch (error) {
-                console.error(`Failed to generate descriptor for ${student.name}:`, error);
-              }
-            }
-
             this.recognizedStudents.set(student.id, profileData);
           }
         }
@@ -106,44 +122,7 @@ export class FaceDetectionService {
     }
   }
 
-  private async generateFaceDescriptor(photoUrl: string): Promise<Float32Array | null> {
-    try {
-      // Create image element from photo URL
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      
-      return new Promise((resolve) => {
-        img.onload = async () => {
-          try {
-            const detections = await faceapi
-              .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
-              .withFaceLandmarks()
-              .withFaceDescriptor();
 
-            if (detections) {
-              resolve(detections.descriptor);
-            } else {
-              console.warn('No face detected in student photo');
-              resolve(null);
-            }
-          } catch (error) {
-            console.error('Face descriptor generation error:', error);
-            resolve(null);
-          }
-        };
-        
-        img.onerror = () => {
-          console.error('Failed to load student photo');
-          resolve(null);
-        };
-        
-        img.src = photoUrl;
-      });
-    } catch (error) {
-      console.error('Face descriptor generation failed:', error);
-      return null;
-    }
-  }
 
   startDetection(
     videoElement: HTMLVideoElement,
@@ -181,92 +160,26 @@ export class FaceDetectionService {
 
   private async detectFaces(videoElement: HTMLVideoElement): Promise<DetectedFace[]> {
     if (!this.canvas || !this.ctx) return [];
-
     try {
-      if (this.modelsLoaded) {
-        // Use face-api.js for real face detection
-        return await this.detectFacesWithFaceApi(videoElement);
-      } else {
-        // Fallback to basic detection
-        return await this.detectFacesBasic(videoElement);
-      }
+      return await this.detectFacesWithMediaPipe(videoElement);
     } catch (error) {
       console.error('Face detection error:', error);
       return [];
     }
   }
 
-  private async detectFacesWithFaceApi(videoElement: HTMLVideoElement): Promise<DetectedFace[]> {
-    try {
-      const detections = await faceapi
-        .detectAllFaces(videoElement, new faceapi.TinyFaceDetectorOptions())
-        .withFaceLandmarks()
-        .withFaceDescriptors();
 
-      const matchedFaces: DetectedFace[] = [];
-
-      for (const detection of detections) {
-        const box = detection.detection.box;
-        const confidence = Math.round(detection.detection.score * 100);
-        
-        // Try to match with registered students
-        let bestMatch: { studentId: string; name: string; distance: number } | null = null;
-        let bestDistance = 0.6; // Threshold for face recognition
-
-        for (const [studentId, student] of Array.from(this.recognizedStudents.entries())) {
-          if (student.descriptor) {
-            const distance = faceapi.euclideanDistance(detection.descriptor, student.descriptor);
-            if (distance < bestDistance) {
-              bestDistance = distance;
-              bestMatch = { studentId, name: student.name, distance };
-            }
-          }
-        }
-
-        // Only add detected face if it matches a registered student
-        if (bestMatch) {
-          matchedFaces.push({
-            x: box.x,
-            y: box.y,
-            width: box.width,
-            height: box.height,
-            confidence: confidence,
-            studentId: bestMatch.studentId,
-            studentName: bestMatch.name
-          });
-        }
-      }
-
-      // Update last detected faces for behavior matching
-      this.lastDetectedFaces = matchedFaces.map(face => ({
-        x: face.x,
-        y: face.y,
-        studentId: face.studentId!,
-        studentName: face.studentName!
-      }));
-
-      return matchedFaces;
-    } catch (error) {
-      console.error('Face-api detection error:', error);
-      return await this.detectFacesBasic(videoElement);
-    }
-  }
 
   private async detectFacesBasic(videoElement: HTMLVideoElement): Promise<DetectedFace[]> {
-    // Set canvas size to match video
     this.canvas!.width = videoElement.videoWidth || 640;
     this.canvas!.height = videoElement.videoHeight || 480;
 
-    // Draw current video frame to canvas
     this.ctx!.drawImage(videoElement, 0, 0, this.canvas!.width, this.canvas!.height);
 
-    // Get image data for processing
     const imageData = this.ctx!.getImageData(0, 0, this.canvas!.width, this.canvas!.height);
-    
-    // Basic face detection using brightness analysis and skin tone detection
+  
     const faces = await this.analyzeImageForFaces(imageData);
     
-    // Match detected faces with registered students
     return this.matchFacesToStudents(faces);
   }
 
@@ -276,8 +189,7 @@ export class FaceDetectionService {
     const height = imageData.height;
     const faces: Array<{x: number, y: number, width: number, height: number}> = [];
 
-    // Simple face detection based on skin tone and blob analysis
-    const blockSize = 20; // Process in 20x20 pixel blocks for performance
+    const blockSize = 20; 
     
     for (let y = 0; y < height - 60; y += blockSize) {
       for (let x = 0; x < width - 60; x += blockSize) {
@@ -760,4 +672,7 @@ export class FaceDetectionService {
     // TODO: Implement actual face recognition algorithms
     return null;
   }
+  // Example: Detect faces using MediaPipe
+
+  // Example: Detect faces using OpenCV.js (Haar Cascade)
 }

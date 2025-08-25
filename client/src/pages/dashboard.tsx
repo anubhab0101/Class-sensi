@@ -6,10 +6,12 @@ import { ClassControls } from "@/components/class-controls";
 import { AttendanceTable } from "@/components/attendance-table";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Class, DetectedFace, BehaviorDetection } from "@shared/schema";
+import type { Class } from "@shared/schema";
+import type { DetectedFace, BehaviorDetection } from "@/lib/face-detection";
 
 export default function Dashboard() {
   const [isRecording, setIsRecording] = useState(false);
+  const [isMonitoring, setIsMonitoring] = useState(false);
   const { toast } = useToast();
 
   // Quick actions listeners
@@ -60,9 +62,59 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/classes'] });
+      setIsMonitoring(true);
       toast({
-        title: "Class Started",
-        description: "Monitoring session has begun"
+        title: "Monitoring Started Successfully!",
+        description: "The attendance monitoring system is now active and tracking students.",
+        variant: "default"
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to Start Monitoring",
+        description: "There was an error starting the monitoring system. Please try again.",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // End class mutation
+  const endClassMutation = useMutation({
+    mutationFn: async (classId: string) => {
+      // First finalize attendance
+      const finalizeResponse = await fetch('/api/attendance/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ classId })
+      });
+      
+      if (!finalizeResponse.ok) {
+        console.warn('Failed to finalize attendance, but continuing with class end');
+      }
+      
+      // Then end the class
+      const response = await fetch(`/api/classes/${classId}/end`, {
+        method: 'POST'
+      });
+      if (!response.ok) throw new Error('Failed to end class');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/classes'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/attendance'] });
+      setIsMonitoring(false);
+      setIsRecording(false);
+      toast({
+        title: "Class Ended",
+        description: "Monitoring has been stopped and attendance records have been finalized.",
+        variant: "default"
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to End Class",
+        description: "There was an error ending the class. Please try again.",
+        variant: "destructive"
       });
     }
   });
@@ -86,7 +138,7 @@ export default function Dashboard() {
   const handleRecordingChange = (recording: boolean) => {
     setIsRecording(recording);
     
-    if (recording && currentClass) {
+    if (recording && currentClass && !isMonitoring) {
       startClassMutation.mutate(currentClass.id);
     }
   };
@@ -95,6 +147,18 @@ export default function Dashboard() {
     if (currentClass) {
       startClassMutation.mutate(currentClass.id);
       setIsRecording(true);
+    } else {
+      toast({
+        title: "No Active Class",
+        description: "Please select a class before starting monitoring.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleStopMonitoring = () => {
+    if (currentClass && isMonitoring) {
+      endClassMutation.mutate(currentClass.id);
     }
   };
 
@@ -126,9 +190,32 @@ export default function Dashboard() {
     });
   };
 
+  // Auto-end class when duration is reached
+  useEffect(() => {
+    if (currentClass && isMonitoring && currentClass.startedAt) {
+      const startTime = new Date(currentClass.startedAt);
+      const durationMs = (currentClass.duration || 90) * 60 * 1000; // Convert minutes to milliseconds
+      const endTime = new Date(startTime.getTime() + durationMs);
+      
+      const now = new Date();
+      if (now >= endTime) {
+        // Class duration has been reached, auto-end
+        handleStopMonitoring();
+      } else {
+        // Set timer to auto-end class
+        const timeUntilEnd = endTime.getTime() - now.getTime();
+        const timer = setTimeout(() => {
+          handleStopMonitoring();
+        }, timeUntilEnd);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [currentClass, isMonitoring]);
+
   return (
     <div className="min-h-screen bg-slate-50">
-      <AppHeader />
+      <AppHeader isMonitoring={isMonitoring} />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -148,6 +235,8 @@ export default function Dashboard() {
               currentClass={currentClass}
               onStartMonitoring={handleStartMonitoring}
               onClassUpdate={handleClassUpdate}
+              isMonitoring={isMonitoring}
+              onStopMonitoring={handleStopMonitoring}
             />
           </div>
         </div>

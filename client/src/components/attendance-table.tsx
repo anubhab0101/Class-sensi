@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Filter } from "lucide-react";
-import type { Student, AttendanceRecord } from "@shared/schema";
+import type { Student, AttendanceRecord, Class } from "@shared/schema";
 
 interface AttendanceTableProps {
   classId?: string;
@@ -18,8 +18,26 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
 
   // Fetch attendance records for current class
   const { data: attendanceRecords = [], isLoading: attendanceLoading } = useQuery<AttendanceRecord[]>({
-    queryKey: ['/api/attendance'],
-    queryParams: classId ? { classId } : undefined
+    queryKey: ['/api/attendance', { classId: classId || '' }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (classId) params.set('classId', classId);
+      const res = await fetch(`/api/attendance${params.toString() ? `?${params.toString()}` : ''}`);
+      if (!res.ok) throw new Error('Failed to fetch attendance');
+      return res.json();
+    }
+  });
+
+  // Fetch class information for duration and threshold
+  const { data: classInfo } = useQuery<Class>({
+    queryKey: ['/api/classes', classId],
+    queryFn: async () => {
+      if (!classId) return null;
+      const res = await fetch(`/api/classes/${classId}`);
+      if (!res.ok) throw new Error('Failed to fetch class');
+      return res.json();
+    },
+    enabled: !!classId
   });
 
   const isLoading = studentsLoading || attendanceLoading;
@@ -28,26 +46,51 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
     return attendanceRecords.find(record => record.studentId === studentId);
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'present':
+  const getStatusBadge = (status: string, timePresent: number, classDuration?: number, attendanceThreshold?: number) => {
+    // If we have class duration and attendance threshold, calculate based on actual attendance
+    if (classDuration && attendanceThreshold !== undefined) {
+      const attendancePercentage = (timePresent / classDuration) * 100;
+      
+      if (attendancePercentage >= attendanceThreshold) {
         return <Badge className="bg-success/10 text-success hover:bg-success/20">Present</Badge>;
-      case 'late':
+      } else if (timePresent > 0 && attendancePercentage >= 25) {
         return <Badge className="bg-warning/10 text-warning hover:bg-warning/20">Late</Badge>;
-      case 'absent':
+      } else {
         return <Badge className="bg-danger/10 text-danger hover:bg-danger/20">Absent</Badge>;
-      default:
-        return <Badge variant="secondary">Unknown</Badge>;
+      }
     }
+    
+    // Fallback logic if no class duration available
+    if (timePresent > 0) {
+      if (timePresent >= 45) { // Assume 45+ minutes means present for most of class
+        return <Badge className="bg-success/10 text-success hover:bg-success/20">Present</Badge>;
+      } else if (timePresent >= 15) { // 15+ minutes means late
+        return <Badge className="bg-warning/10 text-warning hover:bg-warning/20">Late</Badge>;
+      }
+    }
+    
+    // If no time present, show absent
+    return <Badge className="bg-danger/10 text-danger hover:bg-danger/20">Absent</Badge>;
   };
 
-  const getWarningBadge = (timePresent: number, hasWarnings: boolean) => {
+  const getWarningBadge = (timePresent: number, hasWarnings: boolean, lastSeen?: Date | null) => {
     if (hasWarnings) {
       return <Badge className="bg-warning/10 text-warning hover:bg-warning/20">Mobile</Badge>;
     }
-    if (timePresent < 30) {
+    
+    // Check if student was recently detected (within last 5 minutes)
+    if (lastSeen) {
+      const now = new Date();
+      const diffMinutes = Math.floor((now.getTime() - lastSeen.getTime()) / (1000 * 60));
+      if (diffMinutes > 5) {
+        return <Badge className="bg-danger/10 text-danger hover:bg-danger/20">Not Detected</Badge>;
+      }
+    }
+    
+    if (timePresent === 0) {
       return <Badge className="bg-danger/10 text-danger hover:bg-danger/20">Not Detected</Badge>;
     }
+    
     return <span className="text-sm text-slate-500">None</span>;
   };
 
@@ -103,6 +146,14 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
               <span className="text-sm text-slate-600" data-testid="text-student-count">
                 {students.length} Students
               </span>
+              {classInfo && (
+                <>
+                  <span className="text-sm text-slate-400">|</span>
+                  <span className="text-sm text-slate-600">
+                    Threshold: {classInfo.attendanceThreshold}%
+                  </span>
+                </>
+              )}
             </div>
             <Button 
               variant="outline" 
@@ -145,7 +196,8 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
               const attendance = getStudentAttendance(student.id);
               const timePresent = attendance?.timePresent || 0;
               const status = attendance?.status || 'absent';
-              const hasWarnings = status === 'present' && Math.random() > 0.7; // Mock warning logic
+              // Check if student has any active behavior warnings
+              const hasWarnings = false; // This should be fetched from behavior warnings API
               
               return (
                 <tr key={student.id} data-testid={`student-row-${student.studentId}`}>
@@ -168,13 +220,13 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap" data-testid={`status-${student.studentId}`}>
-                    {getStatusBadge(status)}
+                    {getStatusBadge(status, timePresent, classInfo?.duration || undefined, classInfo?.attendanceThreshold || undefined)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900" data-testid={`time-present-${student.studentId}`}>
                     {formatTimePresent(timePresent)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap" data-testid={`warnings-${student.studentId}`}>
-                    {getWarningBadge(timePresent, hasWarnings)}
+                    {getWarningBadge(timePresent, hasWarnings, attendance?.lastSeen)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500" data-testid={`last-seen-${student.studentId}`}>
                     {formatLastSeen(attendance?.lastSeen)}

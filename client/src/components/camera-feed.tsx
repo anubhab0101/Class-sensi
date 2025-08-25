@@ -24,9 +24,26 @@ export function CameraFeed({
   const faceDetectionRef = useRef<FaceDetectionService>(new FaceDetectionService());
   
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'starting' | 'active' | 'error'>('idle');
+  const [faceDetectionActive, setFaceDetectionActive] = useState(false);
   const [detectedFaces, setDetectedFaces] = useState<DetectedFace[]>([]);
   const [detectedBehaviors, setDetectedBehaviors] = useState<BehaviorDetection[]>([]);
-  const [faceDetectionActive, setFaceDetectionActive] = useState(false);
+  const [totalStudents, setTotalStudents] = useState(0);
+
+  // Fetch total students for attendance calculation
+  useEffect(() => {
+    const fetchTotalStudents = async () => {
+      try {
+        const res = await fetch('/api/students');
+        if (res.ok) {
+          const students = await res.json();
+          setTotalStudents(students.length);
+        }
+      } catch (error) {
+        console.error('Failed to fetch students:', error);
+      }
+    };
+    fetchTotalStudents();
+  }, []);
 
   useEffect(() => {
     const initializeServices = async () => {
@@ -277,7 +294,7 @@ export function CameraFeed({
             <div className="flex items-center justify-between">
               <span className="text-sm text-slate-600">Present</span>
               <span className="text-sm text-success font-bold" data-testid="text-attendance-rate">
-                {detectedFaces.length > 0 ? '85%' : '0%'}
+                {totalStudents > 0 ? `${Math.round((detectedFaces.length / totalStudents) * 100)}%` : '0%'}
               </span>
             </div>
           </div>

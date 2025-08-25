@@ -18,18 +18,50 @@ export default function Attendance() {
 
   // Fetch attendance records
   const { data: attendanceRecords = [] } = useQuery<AttendanceRecord[]>({
-    queryKey: ['/api/attendance'],
-    queryParams: selectedClassId ? { classId: selectedClassId } : undefined
+    queryKey: ['/api/attendance', { classId: selectedClassId || '' }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (selectedClassId) params.set('classId', selectedClassId);
+      const res = await fetch(`/api/attendance${params.toString() ? `?${params.toString()}` : ''}`);
+      if (!res.ok) throw new Error('Failed to fetch attendance');
+      return res.json();
+    }
   });
 
   const selectedClass = classes.find(c => c.id === selectedClassId) || classes[0];
 
-  // Calculate statistics
-  const presentCount = attendanceRecords.filter(r => r.status === 'present').length;
-  const lateCount = attendanceRecords.filter(r => r.status === 'late').length;
-  const absentCount = attendanceRecords.filter(r => r.status === 'absent').length;
+  // Calculate statistics based on actual attendance data
+  const calculateAttendanceStats = () => {
+    if (!selectedClass) return { presentCount: 0, lateCount: 0, absentCount: 0, attendanceRate: 0 };
+    
+    const classDuration = selectedClass.duration || 60; // Default to 60 minutes
+    const threshold = selectedClass.attendanceThreshold || 75; // Default to 75%
+    
+    let presentCount = 0;
+    let lateCount = 0;
+    let absentCount = 0;
+    
+    attendanceRecords.forEach(record => {
+      const timePresent = record.timePresent || 0;
+      const attendancePercentage = (timePresent / classDuration) * 100;
+      
+      if (attendancePercentage >= threshold) {
+        presentCount++;
+      } else if (attendancePercentage >= 25) {
+        lateCount++;
+      } else {
+        absentCount++;
+      }
+    });
+    
+    const totalStudents = attendanceRecords.length;
+    const attendanceRate = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
+    
+    return { presentCount, lateCount, absentCount, attendanceRate };
+  };
+
+  const { presentCount, lateCount, absentCount, attendanceRate } = calculateAttendanceStats();
   const totalStudents = attendanceRecords.length;
-  const attendanceRate = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
 
   const handleClassChange = (classId: string) => {
     setSelectedClassId(classId);

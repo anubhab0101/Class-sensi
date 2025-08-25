@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Play, Download, UserPlus, X } from "lucide-react";
+import { Play, Download, UserPlus, X, Square } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import type { Class, BehaviorWarning } from "@shared/schema";
 
@@ -13,12 +13,16 @@ interface ClassControlsProps {
   currentClass?: Class;
   onStartMonitoring: () => void;
   onClassUpdate: (classData: Partial<Class>) => void;
+  isMonitoring?: boolean;
+  onStopMonitoring?: () => void;
 }
 
 export function ClassControls({ 
   currentClass, 
   onStartMonitoring, 
-  onClassUpdate 
+  onClassUpdate,
+  isMonitoring = false,
+  onStopMonitoring
 }: ClassControlsProps) {
   const [duration, setDuration] = useState(currentClass?.duration || 90);
   const [threshold, setThreshold] = useState(currentClass?.attendanceThreshold || 75);
@@ -182,14 +186,26 @@ export function ClassControls({
         <CardContent className="p-6">
           <h3 className="text-lg font-semibold text-slate-800 mb-4">Quick Actions</h3>
           <div className="space-y-3">
-            <Button 
-              onClick={onStartMonitoring}
-              className="w-full bg-success text-white hover:bg-green-600 transition-colors"
-              data-testid="button-start-monitoring"
-            >
-              <Play className="mr-2 h-4 w-4" />
-              Start Monitoring
-            </Button>
+            {!isMonitoring ? (
+              <Button 
+                onClick={onStartMonitoring}
+                className="w-full bg-success text-white hover:bg-green-600 transition-colors"
+                data-testid="button-start-monitoring"
+                disabled={!currentClass}
+              >
+                <Play className="mr-2 h-4 w-4" />
+                Start Monitoring
+              </Button>
+            ) : (
+              <Button 
+                onClick={onStopMonitoring}
+                className="w-full bg-danger text-white hover:bg-red-600 transition-colors"
+                data-testid="button-stop-monitoring"
+              >
+                <Square className="mr-2 h-4 w-4" />
+                Stop Monitoring
+              </Button>
+            )}
             <Button 
               variant="secondary"
               className="w-full"

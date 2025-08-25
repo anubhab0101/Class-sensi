@@ -78,6 +78,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/classes/:id", async (req, res) => {
+    try {
+      const classData = await storage.getClass(req.params.id);
+      if (!classData) {
+        return res.status(404).json({ message: "Class not found" });
+      }
+      res.json(classData);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch class" });
+    }
+  });
+
   app.get("/api/classes/current", async (req, res) => {
     try {
       const currentClass = await storage.getCurrentClass();
@@ -233,6 +245,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(detections);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch recent detections" });
+    }
+  });
+
+  // Update attendance based on face detection
+  app.post("/api/attendance/update-from-detection", async (req, res) => {
+    try {
+      const { classId, studentId, timePresent, lastSeen } = req.body;
+      
+      if (!classId || !studentId) {
+        return res.status(400).json({ message: "classId and studentId are required" });
+      }
+
+      // Get or create attendance record
+      let attendanceRecord = await storage.getAttendanceRecord(classId, studentId);
+      
+      if (!attendanceRecord) {
+        // Create new attendance record
+        const newRecord = {
+          studentId,
+          classId,
+          status: 'present',
+          timePresent: timePresent || 0,
+          lastSeen: lastSeen ? new Date(lastSeen) : new Date()
+        };
+        attendanceRecord = await storage.createAttendanceRecord(newRecord);
+      } else {
+        // Update existing record
+        const updates = {
+          timePresent: timePresent || attendanceRecord.timePresent,
+          lastSeen: lastSeen ? new Date(lastSeen) : new Date()
+        };
+        attendanceRecord = await storage.updateAttendanceRecord(attendanceRecord.id, updates);
+      }
+
+      res.json(attendanceRecord);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to update attendance" });
+    }
+  });
+
+  // Calculate final attendance status for all students in a class
+  app.post("/api/attendance/finalize", async (req, res) => {
+    try {
+      const { classId } = req.body;
+      
+      if (!classId) {
+        return res.status(400).json({ message: "classId is required" });
+      }
+
+      // Get class information
+      const classInfo = await storage.getClass(classId);
+      if (!classInfo) {
+        return res.status(404).json({ message: "Class not found" });
+      }
+
+      // Get all attendance records for this class
+      const attendanceRecords = await storage.getAttendanceRecords(classId);
+      
+      // Calculate final status for each student
+      const updatedRecords = [];
+      for (const record of attendanceRecords) {
+        const timePresent = record.timePresent || 0;
+        const attendancePercentage = (timePresent / classInfo.duration) * 100;
+        let finalStatus = 'absent';
+        
+        if (attendancePercentage >= (classInfo.attendanceThreshold || 75)) {
+          finalStatus = 'present';
+        } else if (timePresent > 0 && attendancePercentage >= 25) {
+          finalStatus = 'late';
+        }
+        
+        // Update the record with final status
+        const updatedRecord = await storage.updateAttendanceRecord(record.id, {
+          status: finalStatus
+        });
+        updatedRecords.push(updatedRecord);
+      }
+
+      res.json({ 
+        message: "Attendance finalized successfully", 
+        records: updatedRecords 
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to finalize attendance" });
     }
   });
 

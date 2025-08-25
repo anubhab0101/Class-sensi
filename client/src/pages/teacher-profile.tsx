@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -44,7 +44,7 @@ export default function TeacherProfile() {
   });
 
   // Reset form when teacher data changes
-  useState(() => {
+  useEffect(() => {
     if (currentTeacher) {
       form.reset({
         name: currentTeacher.name,
@@ -58,10 +58,7 @@ export default function TeacherProfile() {
 
   const createTeacherMutation = useMutation({
     mutationFn: async (data: InsertTeacher) => {
-      const response = await apiRequest('/api/teachers', {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
+      const response = await apiRequest('POST', '/api/teachers', data);
       if (!response.ok) throw new Error('Failed to create teacher profile');
       return response.json();
     },
@@ -78,10 +75,7 @@ export default function TeacherProfile() {
 
   const updateTeacherMutation = useMutation({
     mutationFn: async (data: InsertTeacher) => {
-      const response = await apiRequest(`/api/teachers/${currentTeacher.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data)
-      });
+      const response = await apiRequest('PUT', `/api/teachers/${currentTeacher.id}`, data);
       if (!response.ok) throw new Error('Failed to update teacher profile');
       return response.json();
     },

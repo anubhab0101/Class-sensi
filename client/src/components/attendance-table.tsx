@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Filter, Edit, Save, X } from "lucide-react";
+import { Filter, Edit, Save, X, Download, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -29,6 +29,9 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
     status: 'absent',
     timePresent: 0
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const { toast } = useToast();
 
   // Fetch students
@@ -120,6 +123,82 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
   const handleCancelEdit = () => {
     setEditingRecord(null);
     setEditData({ status: 'absent', timePresent: 0 });
+  };
+
+  // Filter students based on search and status
+  const filteredStudents = students.filter(student => {
+    const attendance = getStudentAttendance(student.id);
+    const timePresent = attendance?.timePresent || 0;
+    const status = attendance?.status || 'absent';
+    
+    // Calculate actual status based on class settings
+    let actualStatus = 'absent';
+    if (classInfo?.duration && classInfo?.attendanceThreshold !== undefined && classInfo?.attendanceThreshold !== null) {
+      const attendancePercentage = (timePresent / classInfo.duration) * 100;
+      if (attendancePercentage >= classInfo.attendanceThreshold) {
+        actualStatus = 'present';
+      } else if (timePresent > 0 && attendancePercentage >= 25) {
+        actualStatus = 'late';
+      }
+    }
+
+    // Search filter
+    const matchesSearch = 
+      student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.studentId.toLowerCase().includes(searchQuery.toLowerCase());
+
+    // Status filter
+    const matchesStatus = statusFilter === "all" || actualStatus === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const exportToCSV = () => {
+    if (!classInfo) {
+      toast({
+        title: "Export Failed",
+        description: "No class information available for export.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const csvData = [
+      ['Student Name', 'Student ID', 'Status', 'Time Present (mins)', 'Last Seen', 'Class', 'Date'],
+      ...filteredStudents.map(student => {
+        const attendance = getStudentAttendance(student.id);
+        const timePresent = attendance?.timePresent || 0;
+        const status = attendance?.status || 'absent';
+        const lastSeen = attendance?.lastSeen ? new Date(attendance.lastSeen).toLocaleString() : 'Never';
+        
+        return [
+          student.name,
+          student.studentId,
+          status,
+          timePresent.toString(),
+          lastSeen,
+          className,
+          new Date().toLocaleDateString()
+        ];
+      })
+    ];
+
+    const csvContent = csvData.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `attendance_${className}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Export Successful",
+      description: `Attendance data exported to CSV for ${className}`,
+      variant: "default"
+    });
   };
 
   const getStatusBadge = (status: string, timePresent: number, classDuration?: number, attendanceThreshold?: number) => {
@@ -220,7 +299,7 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
               <span className="text-sm text-slate-600" data-testid="text-class-name">Class: {className}</span>
               <span className="text-sm text-slate-400">|</span>
               <span className="text-sm text-slate-600" data-testid="text-student-count">
-                {students.length} Students
+                {filteredStudents.length} Students
               </span>
               {classInfo && (
                 <>
@@ -231,16 +310,79 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
                 </>
               )}
             </div>
-            <Button 
-              variant="outline" 
-              size="sm"
-              data-testid="button-filter"
-            >
-              <Filter className="mr-2 h-4 w-4" />
-              Filter
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                data-testid="button-filter"
+              >
+                <Filter className="mr-2 h-4 w-4" />
+                Filter
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={exportToCSV}
+                data-testid="button-export-csv"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            </div>
           </div>
         </div>
+
+        {/* Filter Section */}
+        {isFilterOpen && (
+          <div className="mt-4 pt-4 border-t border-slate-200 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="search-students" className="text-sm font-medium text-slate-700">
+                  Search Students
+                </Label>
+                <div className="relative mt-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+                  <Input
+                    id="search-students"
+                    placeholder="Search by name or ID..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="status-filter" className="text-sm font-medium text-slate-700">
+                  Status Filter
+                </Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="present">Present</SelectItem>
+                    <SelectItem value="late">Late</SelectItem>
+                    <SelectItem value="absent">Absent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setStatusFilter("all");
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       
       <div className="overflow-x-auto">
@@ -268,7 +410,7 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-200">
-            {students.map((student) => {
+            {filteredStudents.map((student) => {
               const attendance = getStudentAttendance(student.id);
               const timePresent = attendance?.timePresent || 0;
               const status = attendance?.status || 'absent';

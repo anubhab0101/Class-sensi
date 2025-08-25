@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Play, Download, UserPlus, X, Square, Plus } from "lucide-react";
+import { Play, Download, UserPlus, X, Square, Plus, BookOpen, ChevronDown } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import type { Class, BehaviorWarning } from "@shared/schema";
 
 interface ClassControlsProps {
@@ -16,6 +18,7 @@ interface ClassControlsProps {
   onClassUpdate: (classData: Partial<Class>) => void;
   isMonitoring?: boolean;
   onStopMonitoring?: () => void;
+  onClassChange?: (classId: string) => void;
 }
 
 export function ClassControls({ 
@@ -23,13 +26,21 @@ export function ClassControls({
   onStartMonitoring, 
   onClassUpdate,
   isMonitoring = false,
-  onStopMonitoring
+  onStopMonitoring,
+  onClassChange
 }: ClassControlsProps) {
   const [duration, setDuration] = useState(currentClass?.duration || 90);
   const [threshold, setThreshold] = useState(currentClass?.attendanceThreshold || 75);
   const [mobileDetection, setMobileDetection] = useState(currentClass?.mobileDetectionEnabled ?? true);
   const [talkingDetection, setTalkingDetection] = useState(currentClass?.talkingDetectionEnabled ?? false);
+  const [isCreateClassOpen, setIsCreateClassOpen] = useState(false);
+  const [newClassName, setNewClassName] = useState("");
   const { toast } = useToast();
+
+  // Fetch all classes
+  const { data: allClasses = [] } = useQuery<Class[]>({
+    queryKey: ['/api/classes']
+  });
 
   // Create default class mutation
   const createClassMutation = useMutation({
@@ -46,9 +57,11 @@ export function ClassControls({
       queryClient.invalidateQueries({ queryKey: ['/api/classes'] });
       toast({
         title: "Class Created",
-        description: "Default class has been created successfully.",
+        description: "New class has been created successfully.",
         variant: "default"
       });
+      setIsCreateClassOpen(false);
+      setNewClassName("");
     },
     onError: () => {
       toast({
@@ -117,7 +130,7 @@ export function ClassControls({
     if (!currentClass) {
       // Create a default class if none exists
       const defaultClass = {
-        name: "CS-101",
+        name: newClassName || "CS-101",
         duration: duration,
         attendanceThreshold: threshold,
         mobileDetectionEnabled: mobileDetection,
@@ -135,6 +148,33 @@ export function ClassControls({
       }
     } else {
       onStartMonitoring();
+    }
+  };
+
+  const handleCreateClass = () => {
+    if (!newClassName.trim()) {
+      toast({
+        title: "Class Name Required",
+        description: "Please enter a class name",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const newClass = {
+      name: newClassName.trim(),
+      duration: duration,
+      attendanceThreshold: threshold,
+      mobileDetectionEnabled: mobileDetection,
+      talkingDetectionEnabled: talkingDetection
+    };
+    
+    createClassMutation.mutate(newClass);
+  };
+
+  const handleClassChange = (classId: string) => {
+    if (onClassChange) {
+      onClassChange(classId);
     }
   };
 
@@ -166,6 +206,68 @@ export function ClassControls({
 
   return (
     <div className="space-y-6">
+      {/* Class Management */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <BookOpen className="h-5 w-5" />
+            <span>Class Management</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="class-select" className="block text-sm font-medium text-slate-700 mb-2">
+              Select Class
+            </Label>
+            <div className="flex space-x-2">
+              <Select value={currentClass?.id || ""} onValueChange={handleClassChange}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Select a class" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allClasses.map((cls) => (
+                    <SelectItem key={cls.id} value={cls.id}>
+                      {cls.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Dialog open={isCreateClassOpen} onOpenChange={setIsCreateClassOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create New Class</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="new-class-name">Class Name</Label>
+                      <Input
+                        id="new-class-name"
+                        value={newClassName}
+                        onChange={(e) => setNewClassName(e.target.value)}
+                        placeholder="Enter class name (e.g., CS-101)"
+                      />
+                    </div>
+                    <div className="flex justify-end space-x-2">
+                      <Button variant="outline" onClick={() => setIsCreateClassOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleCreateClass}>
+                        Create Class
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Class Settings */}
       <Card>
         <CardContent className="p-6">
@@ -179,13 +281,21 @@ export function ClassControls({
                 <Input
                   id="duration"
                   type="number"
+                  min={1}
+                  max={180}
                   value={duration}
-                  onChange={(e) => handleSettingChange('duration', parseInt(e.target.value) || 0)}
+                  onChange={(e) => {
+                    let value = parseInt(e.target.value) || 1;
+                    if (value < 1) value = 1;
+                    if (value > 180) value = 180;
+                    handleSettingChange('duration', value);
+                  }}
                   className="w-20"
                   data-testid="input-duration"
                 />
-                <span className="text-sm text-slate-600">minutes</span>
+                <span className="text-sm text-slate-600">minutes (1-180)</span>
               </div>
+              <p className="text-xs text-slate-500 mt-1">Duration must be between 1 and 180 minutes</p>
             </div>
             <div>
               <Label htmlFor="threshold" className="block text-sm font-medium text-slate-700 mb-2">

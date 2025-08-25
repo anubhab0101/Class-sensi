@@ -168,6 +168,18 @@ export default function Dashboard() {
     }
   };
 
+  const handleClassChange = (classId: string) => {
+    // Update the current class selection
+    queryClient.setQueryData(['/api/classes/current'], (oldData: any) => {
+      const selectedClass = queryClient.getQueryData(['/api/classes', classId]);
+      return selectedClass;
+    });
+    
+    // Invalidate queries to refresh data
+    queryClient.invalidateQueries({ queryKey: ['/api/classes'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/attendance'] });
+  };
+
   const handleFacesDetected = (faces: DetectedFace[]) => {
     // Handle face detection data
     // In a real implementation, this would update attendance records
@@ -235,6 +247,7 @@ export default function Dashboard() {
               currentClass={currentClass}
               onStartMonitoring={handleStartMonitoring}
               onClassUpdate={handleClassUpdate}
+              onClassChange={handleClassChange}
               isMonitoring={isMonitoring}
               onStopMonitoring={handleStopMonitoring}
             />

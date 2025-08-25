@@ -152,7 +152,7 @@ export class MemStorage implements IStorage {
     if (!existing) return undefined;
 
     // End any other active classes
-    for (const [cId, c] of this.classes) {
+    for (const [cId, c] of Array.from(this.classes.entries())) {
       if (c.isActive && cId !== id) {
         this.classes.set(cId, { ...c, isActive: false, endedAt: new Date() });
       }
@@ -197,7 +197,10 @@ export class MemStorage implements IStorage {
     const record: AttendanceRecord = {
       ...insertRecord,
       id,
-      createdAt: new Date()
+      createdAt: new Date(),
+      timePresent: insertRecord.timePresent ?? null,
+      detectionCount: insertRecord.detectionCount ?? null,
+      lastSeen: insertRecord.lastSeen ?? null
     };
     this.attendanceRecords.set(id, record);
     return record;
@@ -225,7 +228,9 @@ export class MemStorage implements IStorage {
     const warning: BehaviorWarning = {
       ...insertWarning,
       id,
-      createdAt: new Date()
+      createdAt: new Date(),
+      isActive: insertWarning.isActive ?? null,
+      description: insertWarning.description ?? null
     };
     this.behaviorWarnings.set(id, warning);
     return warning;
@@ -249,7 +254,10 @@ export class MemStorage implements IStorage {
     const detection: FaceDetection = {
       ...insertDetection,
       id,
-      timestamp: new Date()
+      timestamp: new Date(),
+      studentId: insertDetection.studentId ?? null,
+      confidence: insertDetection.confidence ?? null,
+      boundingBox: insertDetection.boundingBox ?? null
     };
     this.faceDetections.set(id, detection);
     return detection;
@@ -275,7 +283,9 @@ export class MemStorage implements IStorage {
     const teacher: Teacher = {
       ...insertTeacher,
       id,
-      createdAt: new Date()
+      createdAt: new Date(),
+      isActive: insertTeacher.isActive ?? true,
+      photoUrl: insertTeacher.photoUrl ?? null
     };
     this.teachers.set(id, teacher);
     return teacher;

@@ -1,8 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Filter } from "lucide-react";
+import { Filter, Edit, Save, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { Student, AttendanceRecord, Class } from "@shared/schema";
 
 interface AttendanceTableProps {
@@ -10,7 +17,20 @@ interface AttendanceTableProps {
   className?: string;
 }
 
+interface EditAttendanceData {
+  status: string;
+  timePresent: number;
+  lastSeen?: Date;
+}
+
 export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTableProps) {
+  const [editingRecord, setEditingRecord] = useState<string | null>(null);
+  const [editData, setEditData] = useState<EditAttendanceData>({
+    status: 'absent',
+    timePresent: 0
+  });
+  const { toast } = useToast();
+
   // Fetch students
   const { data: students = [], isLoading: studentsLoading } = useQuery<Student[]>({
     queryKey: ['/api/students']
@@ -40,10 +60,66 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
     enabled: !!classId
   });
 
+  // Update attendance record mutation
+  const updateAttendanceMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<AttendanceRecord> }) => {
+      const response = await fetch(`/api/attendance/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (!response.ok) throw new Error('Failed to update attendance');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/attendance'] });
+      toast({
+        title: "Attendance Updated",
+        description: "Student attendance record has been updated successfully.",
+        variant: "default"
+      });
+      setEditingRecord(null);
+    },
+    onError: () => {
+      toast({
+        title: "Update Failed",
+        description: "Failed to update attendance record. Please try again.",
+        variant: "destructive"
+      });
+    }
+  });
+
   const isLoading = studentsLoading || attendanceLoading;
 
   const getStudentAttendance = (studentId: string) => {
     return attendanceRecords.find(record => record.studentId === studentId);
+  };
+
+  const handleEditClick = (studentId: string) => {
+    const attendance = getStudentAttendance(studentId);
+    if (attendance) {
+      setEditData({
+        status: attendance.status || 'absent',
+        timePresent: attendance.timePresent || 0,
+        lastSeen: attendance.lastSeen ? new Date(attendance.lastSeen) : undefined
+      });
+      setEditingRecord(studentId);
+    }
+  };
+
+  const handleSaveEdit = (studentId: string) => {
+    const attendance = getStudentAttendance(studentId);
+    if (attendance) {
+      updateAttendanceMutation.mutate({
+        id: attendance.id,
+        updates: editData
+      });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingRecord(null);
+    setEditData({ status: 'absent', timePresent: 0 });
   };
 
   const getStatusBadge = (status: string, timePresent: number, classDuration?: number, attendanceThreshold?: number) => {
@@ -232,13 +308,67 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
                     {formatLastSeen(attendance?.lastSeen)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      data-testid={`button-edit-${student.studentId}`}
-                    >
-                      Edit
-                    </Button>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleEditClick(student.id)}
+                          data-testid={`button-edit-${student.studentId}`}
+                        >
+                          <Edit className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[425px]">
+                        <DialogHeader>
+                          <DialogTitle>Edit Attendance - {student.name}</DialogTitle>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-4">
+                          <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="status" className="text-right">
+                              Status
+                            </Label>
+                            <Select 
+                              value={editData.status} 
+                              onValueChange={(value) => setEditData({...editData, status: value})}
+                            >
+                              <SelectTrigger className="col-span-3">
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="present">Present</SelectItem>
+                                <SelectItem value="late">Late</SelectItem>
+                                <SelectItem value="absent">Absent</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="timePresent" className="text-right">
+                              Time Present
+                            </Label>
+                            <Input
+                              id="timePresent"
+                              type="number"
+                              value={editData.timePresent}
+                              onChange={(e) => setEditData({...editData, timePresent: parseInt(e.target.value) || 0})}
+                              className="col-span-3"
+                              placeholder="Minutes"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end space-x-2">
+                          <Button variant="outline" onClick={handleCancelEdit}>
+                            <X className="mr-2 h-4 w-4" />
+                            Cancel
+                          </Button>
+                          <Button onClick={() => handleSaveEdit(student.id)}>
+                            <Save className="mr-2 h-4 w-4" />
+                            Save
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </td>
                 </tr>
               );

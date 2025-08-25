@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { UserPlus, Search, Edit2, Trash2, Camera } from "lucide-react";
+import { UserPlus, Search, Edit2, Trash2, Camera, Save, X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertStudentSchema, type Student, type InsertStudent } from "@shared/schema";
@@ -19,6 +19,8 @@ import { useToast } from "@/hooks/use-toast";
 export default function Students() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [isPhotoCaptureOpen, setIsPhotoCaptureOpen] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const { toast } = useToast();
@@ -64,6 +66,36 @@ export default function Students() {
     }
   });
 
+  // Update student mutation
+  const updateStudentMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<InsertStudent> }) => {
+      const response = await fetch(`/api/students/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (!response.ok) throw new Error('Failed to update student');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+      setIsEditDialogOpen(false);
+      setEditingStudent(null);
+      editForm.reset();
+      toast({
+        title: "Student Updated",
+        description: "Student information has been updated successfully"
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to update student. Please try again.",
+        variant: "destructive"
+      });
+    }
+  });
+
   // Delete student mutation
   const deleteStudentMutation = useMutation({
     mutationFn: async (studentId: string) => {
@@ -92,8 +124,40 @@ export default function Students() {
     }
   });
 
+  const editForm = useForm<InsertStudent>({
+    resolver: zodResolver(insertStudentSchema),
+    defaultValues: {
+      name: "",
+      studentId: "",
+      email: "",
+      photoUrl: "",
+      isActive: true
+    }
+  });
+
   const onSubmit = (data: InsertStudent) => {
     createStudentMutation.mutate(data);
+  };
+
+  const onEditSubmit = (data: InsertStudent) => {
+    if (editingStudent) {
+      updateStudentMutation.mutate({
+        id: editingStudent.id,
+        updates: data
+      });
+    }
+  };
+
+  const handleEditClick = (student: Student) => {
+    setEditingStudent(student);
+    editForm.reset({
+      name: student.name,
+      studentId: student.studentId,
+      email: student.email || "",
+      photoUrl: student.photoUrl || "",
+      isActive: student.isActive
+    });
+    setIsEditDialogOpen(true);
   };
 
   const handleDelete = (studentId: string, studentName: string) => {
@@ -108,6 +172,11 @@ export default function Students() {
     setIsPhotoCaptureOpen(false);
   };
 
+  const handleEditPhotoCapture = (photoDataUrl: string) => {
+    editForm.setValue('photoUrl', photoDataUrl);
+    setIsPhotoCaptureOpen(false);
+  };
+
   const handleCancelPhotoCapture = () => {
     setIsPhotoCaptureOpen(false);
   };
@@ -117,9 +186,18 @@ export default function Students() {
     setTimeout(() => setIsPhotoCaptureOpen(true), 0);
   };
 
+  const openEditPhotoCapture = () => {
+    setIsEditDialogOpen(false);
+    setTimeout(() => setIsPhotoCaptureOpen(true), 0);
+  };
+
   const removePhoto = () => {
     setCapturedPhoto(null);
     form.setValue('photoUrl', '');
+  };
+
+  const removeEditPhoto = () => {
+    editForm.setValue('photoUrl', '');
   };
 
   // Filter students based on search query
@@ -395,6 +473,7 @@ export default function Students() {
                       <Button 
                         variant="ghost" 
                         size="sm"
+                        onClick={() => handleEditClick(student)}
                         data-testid={`button-edit-${student.studentId}`}
                       >
                         <Edit2 className="h-4 w-4" />
@@ -436,10 +515,145 @@ export default function Students() {
         )}
       </div>
 
+      {/* Edit Student Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="z-[1000]">
+          <DialogHeader>
+            <DialogTitle>Edit Student - {editingStudent?.name}</DialogTitle>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+              <FormField
+                control={editForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter student's full name" {...field} data-testid="input-edit-student-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={editForm.control}
+                name="studentId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Student ID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter student ID (e.g., STU001)" {...field} data-testid="input-edit-student-id" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={editForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email (Optional)</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="Enter email address" {...field} data-testid="input-edit-student-email" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={editForm.control}
+                name="photoUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Student Photo</FormLabel>
+                    <div className="space-y-4">
+                      {/* Photo Preview */}
+                      {editForm.watch('photoUrl') && (
+                        <div className="flex items-center space-x-4">
+                          <img
+                            src={editForm.watch('photoUrl')}
+                            alt="Student photo"
+                            className="w-20 h-20 rounded-full object-cover border-2 border-slate-200"
+                            data-testid="img-edit-photo-preview"
+                          />
+                          <div className="flex-1">
+                            <p className="text-sm text-success font-medium">Current photo</p>
+                            <p className="text-xs text-slate-600">Click 'Take New Photo' to update</p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={removeEditPhoto}
+                            data-testid="button-remove-edit-photo"
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      )}
+                      
+                      {/* Camera Capture Button */}
+                      <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center">
+                        <Camera className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                        <p className="text-sm text-slate-600 mb-4">
+                          Capture a new photo for face recognition
+                        </p>
+                        <Button
+                          type="button"
+                          onClick={openEditPhotoCapture}
+                          variant="outline"
+                          data-testid="button-edit-capture-photo"
+                        >
+                          <Camera className="mr-2 h-4 w-4" />
+                          Take New Photo
+                        </Button>
+                      </div>
+                      
+                      {/* Manual URL Input (Alternative) */}
+                      <div className="space-y-2">
+                        <Label className="text-xs text-slate-500">Or enter photo URL manually:</Label>
+                        <FormControl>
+                          <Input 
+                            placeholder="Enter photo URL (optional)" 
+                            {...field}
+                            value={field.value || ''}
+                            data-testid="input-edit-student-photo" 
+                          />
+                        </FormControl>
+                      </div>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                  <X className="mr-2 h-4 w-4" />
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={updateStudentMutation.isPending}
+                  data-testid="button-save-edit-student"
+                >
+                  {updateStudentMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
       {/* Photo Capture Modal */}
       <PhotoCapture
         isOpen={isPhotoCaptureOpen}
-        onPhotoCapture={handlePhotoCapture}
+        onPhotoCapture={editingStudent ? handleEditPhotoCapture : handlePhotoCapture}
         onCancel={handleCancelPhotoCapture}
       />
     </div>

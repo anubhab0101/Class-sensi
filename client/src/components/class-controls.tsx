@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Play, Download, UserPlus, X, Square } from "lucide-react";
+import { Play, Download, UserPlus, X, Square, Plus } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { Class, BehaviorWarning } from "@shared/schema";
 
 interface ClassControlsProps {
@@ -28,6 +29,35 @@ export function ClassControls({
   const [threshold, setThreshold] = useState(currentClass?.attendanceThreshold || 75);
   const [mobileDetection, setMobileDetection] = useState(currentClass?.mobileDetectionEnabled ?? true);
   const [talkingDetection, setTalkingDetection] = useState(currentClass?.talkingDetectionEnabled ?? false);
+  const { toast } = useToast();
+
+  // Create default class mutation
+  const createClassMutation = useMutation({
+    mutationFn: async (classData: any) => {
+      const response = await fetch('/api/classes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(classData)
+      });
+      if (!response.ok) throw new Error('Failed to create class');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/classes'] });
+      toast({
+        title: "Class Created",
+        description: "Default class has been created successfully.",
+        variant: "default"
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to Create Class",
+        description: "There was an error creating the class. Please try again.",
+        variant: "destructive"
+      });
+    }
+  });
 
   // Fetch active warnings
   const { data: warnings = [] } = useQuery<BehaviorWarning[]>({
@@ -81,6 +111,31 @@ export function ClassControls({
 
   const handleDismissWarning = (warningId: string) => {
     dismissWarningMutation.mutate(warningId);
+  };
+
+  const handleStartMonitoring = async () => {
+    if (!currentClass) {
+      // Create a default class if none exists
+      const defaultClass = {
+        name: "CS-101",
+        duration: duration,
+        attendanceThreshold: threshold,
+        mobileDetectionEnabled: mobileDetection,
+        talkingDetectionEnabled: talkingDetection
+      };
+      
+      try {
+        await createClassMutation.mutateAsync(defaultClass);
+        // Wait a bit for the class to be created and fetched
+        setTimeout(() => {
+          onStartMonitoring();
+        }, 500);
+      } catch (error) {
+        console.error("Failed to create class:", error);
+      }
+    } else {
+      onStartMonitoring();
+    }
   };
 
   const getWarningIcon = (type: string) => {
@@ -188,13 +243,17 @@ export function ClassControls({
           <div className="space-y-3">
             {!isMonitoring ? (
               <Button 
-                onClick={onStartMonitoring}
+                onClick={handleStartMonitoring}
                 className="w-full bg-success text-white hover:bg-green-600 transition-colors"
                 data-testid="button-start-monitoring"
-                disabled={!currentClass}
+                disabled={createClassMutation.isPending}
               >
-                <Play className="mr-2 h-4 w-4" />
-                Start Monitoring
+                {createClassMutation.isPending ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                ) : (
+                  <Play className="mr-2 h-4 w-4" />
+                )}
+                {currentClass ? "Start Monitoring" : "Create Class & Start Monitoring"}
               </Button>
             ) : (
               <Button 

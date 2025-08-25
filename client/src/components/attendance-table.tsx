@@ -18,8 +18,14 @@ export function AttendanceTable({ classId, className = "CS-101" }: AttendanceTab
 
   // Fetch attendance records for current class
   const { data: attendanceRecords = [], isLoading: attendanceLoading } = useQuery<AttendanceRecord[]>({
-    queryKey: ['/api/attendance'],
-    queryParams: classId ? { classId } : undefined
+    queryKey: ['/api/attendance', { classId: classId || '' }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (classId) params.set('classId', classId);
+      const res = await fetch(`/api/attendance${params.toString() ? `?${params.toString()}` : ''}`);
+      if (!res.ok) throw new Error('Failed to fetch attendance');
+      return res.json();
+    }
   });
 
   const isLoading = studentsLoading || attendanceLoading;

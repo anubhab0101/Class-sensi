@@ -18,8 +18,14 @@ export default function Attendance() {
 
   // Fetch attendance records
   const { data: attendanceRecords = [] } = useQuery<AttendanceRecord[]>({
-    queryKey: ['/api/attendance'],
-    queryParams: selectedClassId ? { classId: selectedClassId } : undefined
+    queryKey: ['/api/attendance', { classId: selectedClassId || '' }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (selectedClassId) params.set('classId', selectedClassId);
+      const res = await fetch(`/api/attendance${params.toString() ? `?${params.toString()}` : ''}`);
+      if (!res.ok) throw new Error('Failed to fetch attendance');
+      return res.json();
+    }
   });
 
   const selectedClass = classes.find(c => c.id === selectedClassId) || classes[0];

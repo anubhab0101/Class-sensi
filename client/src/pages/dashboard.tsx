@@ -6,7 +6,8 @@ import { ClassControls } from "@/components/class-controls";
 import { AttendanceTable } from "@/components/attendance-table";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Class, DetectedFace, BehaviorDetection } from "@shared/schema";
+import type { Class } from "@shared/schema";
+import type { DetectedFace, BehaviorDetection } from "@/lib/face-detection";
 
 export default function Dashboard() {
   const [isRecording, setIsRecording] = useState(false);

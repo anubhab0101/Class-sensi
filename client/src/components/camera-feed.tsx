@@ -191,18 +191,45 @@ export function CameraFeed({
                 <button 
                   className="bg-black/50 text-white p-2 rounded-md hover:bg-black/70 transition-colors"
                   data-testid="button-expand"
+                  onClick={() => {
+                    const container = videoRef.current?.parentElement as HTMLElement | undefined;
+                    if (!container) return;
+                    if (document.fullscreenElement) {
+                      document.exitFullscreen().catch(() => {});
+                    } else {
+                      container.requestFullscreen?.();
+                    }
+                  }}
                 >
                   <Expand className="h-4 w-4" />
                 </button>
                 <button 
                   className="bg-black/50 text-white p-2 rounded-md hover:bg-black/70 transition-colors"
                   data-testid="button-capture"
+                  onClick={() => {
+                    try {
+                      const canvas = document.createElement('canvas');
+                      const video = videoRef.current;
+                      if (!video) return;
+                      canvas.width = video.videoWidth;
+                      canvas.height = video.videoHeight;
+                      const ctx = canvas.getContext('2d');
+                      if (!ctx) return;
+                      ctx.drawImage(video, 0, 0);
+                      const url = canvas.toDataURL('image/jpeg', 0.9);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = `snapshot-${Date.now()}.jpg`;
+                      link.click();
+                    } catch {}
+                  }}
                 >
                   <Camera className="h-4 w-4" />
                 </button>
                 <button 
                   className="bg-black/50 text-white p-2 rounded-md hover:bg-black/70 transition-colors"
                   data-testid="button-settings"
+                  onClick={() => setFaceDetectionActive((v) => !v)}
                 >
                   <Settings className="h-4 w-4" />
                 </button>

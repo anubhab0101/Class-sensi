@@ -23,6 +23,12 @@ export default function Students() {
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // Open dialog when navigated via quick action
+  if (typeof window !== "undefined" && window.location.hash === "#add" && !isDialogOpen) {
+    setTimeout(() => setIsDialogOpen(true), 0);
+    window.history.replaceState({}, "", "/students");
+  }
+
   // Fetch students
   const { data: students = [], isLoading } = useQuery<Student[]>({
     queryKey: ['/api/students']
@@ -107,7 +113,8 @@ export default function Students() {
   };
 
   const openPhotoCapture = () => {
-    setIsPhotoCaptureOpen(true);
+    setIsDialogOpen(false);
+    setTimeout(() => setIsPhotoCaptureOpen(true), 0);
   };
 
   const removePhoto = () => {
@@ -159,7 +166,7 @@ export default function Students() {
                 Add Student
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="z-[1000]">
               <DialogHeader>
                 <DialogTitle>Add New Student</DialogTitle>
               </DialogHeader>

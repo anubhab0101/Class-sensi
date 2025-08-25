@@ -7,6 +7,7 @@ import Dashboard from "@/pages/dashboard";
 import Students from "@/pages/students";
 import Attendance from "@/pages/attendance";
 import TeacherProfile from "@/pages/teacher-profile";
+import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -16,6 +17,7 @@ function Router() {
       <Route path="/students" component={Students} />
       <Route path="/attendance" component={Attendance} />
       <Route path="/teacher-profile" component={TeacherProfile} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );

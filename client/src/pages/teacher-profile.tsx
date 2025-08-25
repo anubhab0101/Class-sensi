@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Edit2, Save, X, User, Camera, ChevronDown } from "lucide-react";
+import { Edit2, Save, X, User, Camera, ChevronDown, UserPlus } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTeacherSchema, type Teacher, type InsertTeacher } from "@shared/schema";
@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function TeacherProfile() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
   const { toast } = useToast();
@@ -37,6 +38,35 @@ export default function TeacherProfile() {
       return res.json();
     },
     enabled: !!selectedTeacherId || teachers.length > 0
+  });
+
+  // Create teacher mutation
+  const createTeacherMutation = useMutation({
+    mutationFn: async (teacherData: InsertTeacher) => {
+      const response = await fetch('/api/teachers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(teacherData)
+      });
+      if (!response.ok) throw new Error('Failed to create teacher');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/teachers'] });
+      setIsCreateDialogOpen(false);
+      createForm.reset();
+      toast({
+        title: "Teacher Created",
+        description: "New teacher profile has been created successfully"
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Creation Failed",
+        description: "Failed to create teacher profile. Please try again.",
+        variant: "destructive"
+      });
+    }
   });
 
   // Update teacher mutation
@@ -79,6 +109,16 @@ export default function TeacherProfile() {
     }
   });
 
+  const createForm = useForm<InsertTeacher>({
+    resolver: zodResolver(insertTeacherSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      photoUrl: "",
+      isActive: true
+    }
+  });
+
   const onEditSubmit = (data: InsertTeacher) => {
     if (editingTeacher) {
       updateTeacherMutation.mutate({
@@ -86,6 +126,10 @@ export default function TeacherProfile() {
         updates: data
       });
     }
+  };
+
+  const onCreateSubmit = (data: InsertTeacher) => {
+    createTeacherMutation.mutate(data);
   };
 
   const handleEditClick = (teacher: Teacher) => {
@@ -116,6 +160,97 @@ export default function TeacherProfile() {
           <div className="animate-pulse space-y-4">
             <div className="h-8 bg-slate-200 rounded w-1/4"></div>
             <div className="h-64 bg-slate-100 rounded-lg"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (teachers.length === 0) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <AppHeader />
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="text-center">
+            <User className="h-24 w-24 text-slate-400 mx-auto mb-6" />
+            <h1 className="text-3xl font-bold text-slate-800 mb-4">No Teachers Found</h1>
+            <p className="text-slate-600 mb-8">Get started by creating your first teacher profile.</p>
+            
+            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="lg" className="bg-blue-600 hover:bg-blue-700">
+                  <UserPlus className="mr-2 h-5 w-5" />
+                  Create First Teacher
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Create New Teacher Profile</DialogTitle>
+                </DialogHeader>
+                <Form {...createForm}>
+                  <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4">
+                    <FormField
+                      control={createForm.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Full Name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter teacher's full name" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={createForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="Enter email address" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={createForm.control}
+                      name="photoUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Profile Photo URL (Optional)</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="Enter photo URL (optional)" 
+                              {...field}
+                              value={field.value || ''}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <div className="flex justify-end space-x-2 pt-4">
+                      <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                        <X className="mr-2 h-4 w-4" />
+                        Cancel
+                      </Button>
+                      <Button 
+                        type="submit" 
+                        disabled={createTeacherMutation.isPending}
+                      >
+                        {createTeacherMutation.isPending ? 'Creating...' : 'Create Teacher'}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </div>
@@ -174,6 +309,84 @@ export default function TeacherProfile() {
               <Edit2 className="mr-2 h-4 w-4" />
               Edit Profile
             </Button>
+
+            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Add Teacher
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Create New Teacher Profile</DialogTitle>
+                </DialogHeader>
+                <Form {...createForm}>
+                  <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4">
+                    <FormField
+                      control={createForm.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Full Name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter teacher's full name" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={createForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <FormControl>
+                              <Input type="email" placeholder="Enter email address" {...field} />
+                            </FormControl>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={createForm.control}
+                      name="photoUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Profile Photo URL (Optional)</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="Enter photo URL (optional)" 
+                              {...field}
+                              value={field.value || ''}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <div className="flex justify-end space-x-2 pt-4">
+                      <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                        <X className="mr-2 h-4 w-4" />
+                        Cancel
+                      </Button>
+                      <Button 
+                        type="submit" 
+                        disabled={createTeacherMutation.isPending}
+                      >
+                        {createTeacherMutation.isPending ? 'Creating...' : 'Create Teacher'}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 

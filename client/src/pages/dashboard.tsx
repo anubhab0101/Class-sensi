@@ -35,6 +35,12 @@ export default function Dashboard() {
     queryKey: ['/api/classes/current']
   });
 
+  // Fetch all classes
+  const { data: allClasses } = useQuery<Class[]>({
+    queryKey: ['/api/classes'],
+    initialData: []
+  });
+
   // Update class mutation
   const updateClassMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<Class> }) => {
@@ -169,15 +175,18 @@ export default function Dashboard() {
   };
 
   const handleClassChange = (classId: string) => {
-    // Update the current class selection
-    queryClient.setQueryData(['/api/classes/current'], (oldData: any) => {
-      const selectedClass = queryClient.getQueryData(['/api/classes', classId]);
-      return selectedClass;
-    });
+    // Find the selected class from the all classes query
+    const selectedClass = allClasses?.find(cls => cls.id === classId);
     
-    // Invalidate queries to refresh data
-    queryClient.invalidateQueries({ queryKey: ['/api/classes'] });
-    queryClient.invalidateQueries({ queryKey: ['/api/attendance'] });
+    if (selectedClass) {
+      // Update the current class in the query client
+      queryClient.setQueryData(['/api/classes/current'], selectedClass);
+      
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['/api/classes'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/attendance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/warnings'] });
+    }
   };
 
   const handleFacesDetected = (faces: DetectedFace[]) => {

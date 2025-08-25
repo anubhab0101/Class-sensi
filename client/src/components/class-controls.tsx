@@ -76,16 +76,16 @@ export function ClassControls({
   const { data: warnings = [] } = useQuery<BehaviorWarning[]>({
     queryKey: ['/api/warnings', { classId: currentClass?.id, isActive: 'true' }],
     queryFn: async () => {
-      if (!currentClass?.id) return [];
       const params = new URLSearchParams({
-        classId: currentClass.id,
         isActive: 'true'
       });
+      if (currentClass?.id) {
+        params.append('classId', currentClass.id);
+      }
       const response = await fetch(`/api/warnings?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch warnings');
       return response.json();
-    },
-    enabled: !!currentClass?.id
+    }
   });
 
   // Dismiss warning mutation
@@ -175,6 +175,16 @@ export function ClassControls({
   const handleClassChange = (classId: string) => {
     if (onClassChange) {
       onClassChange(classId);
+    }
+    
+    // Also update the local state to reflect the selected class
+    const selectedClass = allClasses.find(cls => cls.id === classId);
+    if (selectedClass) {
+      // Update local state values
+      setDuration(selectedClass.duration || 90);
+      setThreshold(selectedClass.attendanceThreshold || 75);
+      setMobileDetection(selectedClass.mobileDetectionEnabled ?? true);
+      setTalkingDetection(selectedClass.talkingDetectionEnabled ?? false);
     }
   };
 
